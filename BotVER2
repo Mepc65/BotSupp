@@ -18,20 +18,20 @@ from telethon.tl.types import ReactionEmoji
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Список ID пользователей, которых игнорируем
-IGNORED_USERS = {111111}
+IGNORED_USERS = {1231231231, 12312123}
 
 
 # API-токен для Aiogram
-API_TOKEN = "11111111111111111"
+API_TOKEN = "123231212"
 
 # Данные UserBot
-API_ID = "1111111"
-API_HASH = "1111111111111"
+API_ID = "123121231231"
+API_HASH = "1231231221"
 USERBOT_SESSION = "userbot_session"
 
 # Чаты
-SOURCE_CHAT_ID = -111111111  # CB
-TARGET_CHAT_USERBOT = -111111111111  # Чат, где отвечает только UserBot
+SOURCE_CHAT_ID = 12312312  # CB
+TARGET_CHAT_USERBOT = 123121  # Чат, где отвечает только UserBot
 
 # Файл для кэша
 CACHE_FILE = "cache.json"
@@ -68,7 +68,7 @@ def save_cache():
         logging.error(f"⚠ Ошибка сохранения кэша: {e}")
 
 
-# Функция очистки устаревших записей (старше 24 часов)
+# Функция очистки устаревших id (старше 24 часов)
 def cleanup_cache():
     global cache
     now = time.time()
@@ -192,9 +192,14 @@ async def handle_message(message: Message):
         return
 
     text = message.caption if message.caption else message.text
+    has_media = bool(message.document or message.photo or message.video or message.audio or message.voice or message.sticker or message.video_note)
 
     if not text:
         logging.info(f"Бот получил сообщение из {chat_id}, но оно не содержит текста.")
+        return
+
+    if not has_media:
+        logging.info(f"⚠ Сообщение из {chat_id} без медиа, игнорируем.")
         return
 
     logging.info(f"Бот получил сообщение из {chat_id}: {text}")
@@ -205,9 +210,8 @@ async def handle_message(message: Message):
         logging.info(f"⚠ В тексте нет ID, бот не отвечает.")
         return
 
-    if found_ids:
-        longest_id = max(found_ids, key=len)  # Берем только самый длинный ID
-        await handle_target_chat_id(longest_id, chat_id, message.message_id)
+    longest_id = max(found_ids, key=len)  # Берем только самый длинный ID
+    await handle_target_chat_id(longest_id, chat_id, message.message_id)
 
 
 # Функция обработки ID
@@ -272,18 +276,37 @@ def extract_ids(text):
     if not text:
         return []
 
-    patterns = [
-        re.compile(r"\b[a-f0-9]{30,64}\b", re.IGNORECASE),  # Гибкий HEX (30-64 знака)
-        re.compile(r"\b\d{6,9}\b"),  # 6-9 значный цифровой ID
-        re.compile(r"\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b", re.IGNORECASE)  # UUID
-    ]
+    # Разбиваем текст на слова/токены
+    tokens = re.findall(r"[a-zA-Z0-9_\-]{4,}", text)
 
-    ids = set()
-    for pattern in patterns:
-        ids.update(pattern.findall(text))
+    ids = []
+    for token in tokens:
+        # Пропускаем явно обычные слова
+        if token.lower() in {"успех", "ошибка", "clientid", "trackerid", "статус"}:
+            continue
 
-    logging.info(f"🔍 Найденные ID: {ids}")
-    return list(ids)
+        # длинные числа (от 4 символов)
+        if token.isdigit() and 4 <= len(token) <= 20:
+            ids.append(token)
+            continue
+
+        # Условие 2: содержит буквы и цифры → ID (не просто слово)
+        if any(c.isdigit() for c in token) and any(c.isalpha() for c in token):
+            ids.append(token)
+            continue
+
+        # Условие 3: длинные hex (24+ символа)
+        if re.fullmatch(r"[a-f0-9]{24,64}", token, re.IGNORECASE):
+            ids.append(token)
+            continue
+
+        # Условие 4: UUID-формат
+        if re.fullmatch(r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", token, re.IGNORECASE):
+            ids.append(token)
+            continue
+
+    logging.info(f"Найденные ID: {ids}")
+    return ids
 
 
 # Таймер для сверки кэша
